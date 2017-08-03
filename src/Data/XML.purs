@@ -8,18 +8,16 @@ module Data.XML
   , module Data.XML.Combinators
   ) where
 
-import Data.XML.Combinators (xmlChild, xmlChildren, xmlIntChild, xmlNumChild, xmlTextChild, (!?>), (#?>), (=?>), (?>), (?>>))
 import Control.Alternative ((<|>))
-import Data.Array (fromFoldable)
-import Data.Array (singleton) as A
 import Data.Either (Either)
 import Data.Foldable (foldl)
-import Data.Maybe (Maybe(Nothing, Just))
-import Data.StrMap (StrMap, empty, insert)
+import Data.List (List(..))
+import Data.Map (empty, insert)
 import Data.String (singleton)
 import Data.String.Unsafe (char) as Data.String.Unsafe
 import Data.Tuple (Tuple(..))
-import Data.XML.Types (XML(..))
+import Data.XML.Combinators (xmlChild, xmlChildren, xmlIntChild, xmlNumChild, xmlTextChild, (!?>), (#?>), (=?>), (?>), (?>>))
+import Data.XML.Types (XML(..), XMLAttributes)
 import Text.Parsing.Parser (ParseError, Parser, runParser)
 import Text.Parsing.Parser.Combinators (lookAhead, many1Till, manyTill, try)
 import Text.Parsing.Parser.String (anyChar, satisfy, skipSpaces, string)
@@ -53,7 +51,7 @@ openingTagName = do
   void (string "<")
   foldl append "" <$> many1Till (singleton <$> anyChar) tagEnd
 
-tagAttributes :: Parser String (StrMap String)
+tagAttributes :: Parser String XMLAttributes
 tagAttributes = foldl (\b (Tuple k v) -> insert k v b) empty <$> manyTill attribute tagEnd
 
 attribute :: Parser String (Tuple String String)
@@ -75,10 +73,10 @@ closingTag = do
   void $ manyTill (singleton <$> anyChar) (skipSpaces >>= \_ -> string ">")
   skipSpaces
 
-tagWithChildren :: (Maybe (Array XML) -> XML) -> Parser String XML
+tagWithChildren :: (List XML -> XML) -> Parser String XML
 tagWithChildren f = do
   void (string ">")
-  pure <<< f <<< Just <<< fromFoldable =<< many1Till xml closingTag
+  pure <<< f =<< many1Till xml closingTag
 
 cdata :: Parser String String
 cdata = do
@@ -87,17 +85,17 @@ cdata = do
   closingTag
   pure str
 
-contentNode :: (Maybe (Array XML) -> XML) -> Parser String XML
+contentNode :: (List XML -> XML) -> Parser String XML
 contentNode f = do
   void (string ">")
   content <- try cdata <|> (foldl append "" <$> many1Till anyButBracket closingTag)
   skipSpaces
-  pure $ f $ Just $ A.singleton (XMLContent content)
+  pure $ f $ pure (XMLContent content)
 
 anyButBracket :: Parser String String
 anyButBracket = singleton <$> (satisfy \c -> Data.String.Unsafe.char "<" /= c && Data.String.Unsafe.char ">" /= c)
 
-selfClosingTag :: ∀ a. (Maybe a -> XML) -> Parser String XML
+selfClosingTag :: (List XML -> XML) -> Parser String XML
 selfClosingTag f = do
   let orphan = do
         void $ string ">"
@@ -106,7 +104,7 @@ selfClosingTag f = do
   skipSpaces
   void (string "/>") <|> orphan
   skipSpaces
-  pure $ f Nothing
+  pure $ f Nil
 
 tagEnd :: Parser String String
 tagEnd = string " " <|> (lookAhead (string "/" <|> string ">"))

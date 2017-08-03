@@ -1,8 +1,13 @@
 module Data.XML.Types where
 
-import Data.Maybe (Maybe)
-import Data.StrMap (StrMap)
+import Data.List (List)
+import Data.Map (Map)
+
+type XMLAttributes = Map XMLAttributeName XMLAttributeValue
+type XMLAttributeName = String
+type XMLAttributeValue = String
+type XMLTagName = String
 
 data XML
-  = XMLNode String (StrMap String) (Maybe (Array XML))
+  = XMLNode XMLTagName XMLAttributes (List XML)
   | XMLContent String

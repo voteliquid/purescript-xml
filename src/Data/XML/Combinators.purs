@@ -12,31 +12,32 @@ module Data.XML.Combinators
   ) where
 
 import Prelude
-import Data.Array (filter, index)
 import Data.Either (Either(..))
 import Data.Foldable (foldl)
 import Data.Int (fromString) as Int
+import Data.List (List, filter, index, length)
 import Data.Maybe (Maybe(Nothing, Just), maybe)
 import Data.XML.Types (XML(..))
 import Global (isFinite, readFloat)
 
 xmlChild :: XML -> String -> Either String XML
 xmlChild (XMLContent _) tag = Left $ "expected an xml node but found content node"
-xmlChild (XMLNode _ _ Nothing) tag = Left "expected a node with children"
-xmlChild (XMLNode n _ (Just kids)) tag =
+xmlChild (XMLNode n _ kids) tag =
   let fold b node@(XMLNode name _ _) = if name == tag then Right node else b
       fold b node@(XMLContent _) = b
    in foldl fold (Left ("no node found with tag \"" <> tag <> "\"")) kids
 
 infix 7 xmlChild as ?>
 
-xmlChildren :: XML -> String -> Either String (Array XML)
+xmlChildren :: XML -> String -> Either String (List XML)
 xmlChildren (XMLContent _) _ = Left "expected an xml node but found content node"
-xmlChildren (XMLNode _ _ Nothing) tag = Left "expected a node with children"
-xmlChildren (XMLNode n _ (Just kids)) tag =
+xmlChildren (XMLNode n _ kids) tag =
   let check (XMLNode name _ _) = name == tag
       check (XMLContent _) = false
-   in Right $ filter check kids
+      checked = filter check kids
+   in if length checked == 0
+        then Left ("no child xml node found with tag \"" <> tag <> "\"")
+        else Right checked
 
 infix 7 xmlChildren as ?>>
 
@@ -57,8 +58,7 @@ infix 7 xmlIntChild as !?>
 
 xmlText :: XML -> Either String String
 xmlText (XMLContent _) = Left "expected an xml node but found content node"
-xmlText (XMLNode _ _ Nothing) = Left "expected a node with children"
-xmlText (XMLNode _ _ (Just kids)) =
+xmlText (XMLNode _ _ kids) =
   let fold txt (XMLContent s) = txt <> s
       fold txt (XMLNode _ _ _) = txt
    in Right $ foldl fold "" kids
@@ -79,8 +79,7 @@ xmlBool _ = Left "expected a valid bool string"
 
 xmlChildAtIdx :: XML -> String -> Int -> Either String XML
 xmlChildAtIdx (XMLContent _) _ _ = Left "expected a node"
-xmlChildAtIdx (XMLNode _ _ Nothing) _ _ = Left "expected a node with children"
-xmlChildAtIdx (XMLNode _ _ (Just kids)) tag idx =
+xmlChildAtIdx (XMLNode _ _ kids) tag idx =
   let elem = index kids idx
       isTag (XMLNode name _ _) = name == tag
       isTag (XMLContent _) = false
