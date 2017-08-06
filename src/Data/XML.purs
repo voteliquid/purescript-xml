@@ -8,4 +8,4 @@ module Data.XML
 import Data.XML.Decode (class DecodeXML, decodeXML, getChild, (?>), getNestedChild, (?>>), filterChildren, (=?>))
 import Data.XML.Encode (class EncodeXML, encodeXML)
 import Data.XML.Parse (parseXML)
-import Data.XML.Types (XML(..), XMLAttributes)
+import Data.XML.Types (XML(..), XMLAttribute)

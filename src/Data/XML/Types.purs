@@ -1,13 +1,13 @@
 module Data.XML.Types where
 
 import Data.List (List)
-import Data.Map (Map)
+import Data.Tuple (Tuple)
 
-type XMLAttributes = Map XMLAttributeName XMLAttributeValue
+type XMLAttribute = Tuple XMLAttributeName XMLAttributeValue
 type XMLAttributeName = String
 type XMLAttributeValue = String
 type XMLTagName = String
 
 data XML
-  = XMLNode XMLTagName XMLAttributes (List XML)
+  = XMLNode XMLTagName (List XMLAttribute) (List XML)
   | XMLContent String

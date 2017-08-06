@@ -1,95 +1,122 @@
 module Data.XML.Parse (parseXML) where
 
 import Control.Alternative ((<|>))
+import Control.Monad.Rec.Class (Step(..), tailRecM)
+import Control.Monad.State.Trans (get)
+import Data.Array (fromFoldable, many, (:))
+import Data.Char.Unicode (isAlpha, isAlphaNum)
 import Data.Either (Either)
-import Data.Foldable (foldl)
-import Data.List (List(..))
-import Data.Map (empty, insert)
-import Data.String (singleton)
+import Data.List (List(..), reverse)
+import Data.String (fromCharArray)
 import Data.String.Unsafe (char) as Data.String.Unsafe
 import Data.Tuple (Tuple(..))
-import Data.XML.Types (XML(..), XMLAttributes)
-import Text.Parsing.Parser (ParseError, Parser, runParser)
-import Text.Parsing.Parser.Combinators (lookAhead, many1Till, manyTill, try)
-import Text.Parsing.Parser.String (anyChar, satisfy, skipSpaces, string)
+import Data.XML.Types (XML(..), XMLAttribute)
+import Text.Parsing.Parser (ParseError, ParseState(..), Parser, fail, runParser)
+import Text.Parsing.Parser.Combinators (lookAhead, try, withErrorMessage)
+import Text.Parsing.Parser.String (anyChar, char, eof, noneOf, oneOf, satisfy, skipSpaces, string)
 import Prelude hiding (between)
 
 parseXML :: String -> Either ParseError XML
-parseXML = flip runParser $ try (parseDeclaration >>= \_ -> parseNode) <|> parseNode
-
-parseNode :: Parser String XML
-parseNode = do
-  tagname <- parseOpeningTagName
-  attrs <- parseparseAttributes
-  let node = XMLNode tagname attrs
-  (try (parseContentNode node)) <|> (try (parseSelfClosingTag node)) <|> (parseChildNodes node)
-
-parseDeclaration :: Parser String Unit
-parseDeclaration = do
+parseXML = flip runParser do
   skipSpaces
-  void $ string "<?"
-  void $ manyTill (singleton <$> anyChar) (string "?>")
-
-parseOpeningTagName :: Parser String String
-parseOpeningTagName = do
+  _ <- try parseXmlDeclaration
   skipSpaces
-  void (string "<")
-  foldl append "" <$> many1Till (singleton <$> anyChar) parseTagEnd
+  x <- try parseEmptyTag <|> parseClosedTag
+  eof
+  pure x
 
-parseparseAttributes :: Parser String XMLAttributes
-parseparseAttributes = foldl (\b (Tuple k v) -> insert k v b) empty <$> manyTill parseAttribute parseTagEnd
+parseClosedTag :: Parser String XML
+parseClosedTag = do
+  _ <- string "<"
+  n <- parseTagName
+  skipSpaces
+  attrs <- parseAttributes
+  skipSpaces
+  _ <- string ">"
+  kids <- manyTill (parseCDATA <|> parseEmptyTag <|> parseClosedTag <|> parseContent) (string "</")
+  skipSpaces
+  _ <- string n
+  skipSpaces
+  _ <- string ">"
+  skipSpaces
+  pure $ XMLNode n attrs kids
 
-parseAttribute :: Parser String (Tuple String String)
+parseEmptyTag :: Parser String XML
+parseEmptyTag = do
+  _ <- string "<"
+  n <- parseTagName
+  skipSpaces
+  attrs <- parseAttributes
+  skipSpaces
+  _ <- string "/>"
+  skipSpaces
+  pure $ XMLNode n attrs Nil
+
+parseXmlDeclaration :: Parser String XML
+parseXmlDeclaration = do
+  _ <- string "<?xml"
+  skipSpaces
+  attrs <- parseAttributes
+  skipSpaces
+  _ <- string "?>"
+  skipSpaces
+  pure $ XMLNode "xml" attrs Nil
+
+parseTagName :: Parser String String
+parseTagName = do
+  a <- withErrorMessage (satisfy isAlpha <|> char (ch "_"))
+        "tag name to begin with alpha character or underscore"
+  as <- withErrorMessage (many $ satisfy isAlphaNum <|> oneOf [ch "-", ch "_", ch ":", ch "."])
+        "tag name to contain only alphanumeric characters, dashes, underscores, colons, and periods"
+  pure $ fromCharArray (a:as)
+
+parseAttributes :: Parser String (List XMLAttribute)
+parseAttributes = manyTill parseAttribute (lookAhead (string "?>" <|> string "/>" <|> string ">"))
+
+parseAttribute :: Parser String XMLAttribute
 parseAttribute = do
-  key <- parseAttributeKey
-  val <- parseAttributeValue
-  pure $ Tuple key val
-
-parseAttributeValue :: Parser String String
-parseAttributeValue = foldl append "" <$> many1Till (singleton <$> anyChar) (string "\"")
-
-parseAttributeKey :: Parser String String
-parseAttributeKey = foldl append "" <$> many1Till (singleton <$> anyChar) (string "=\"")
-
-parseClosingTag :: Parser String Unit
-parseClosingTag = do
-  void $ string "</"
+  let name = fromCharArray <$> (many $ satisfy isAlphaNum <|> oneOf [ch "-", ch "_", ch ":", ch "."])
+  n <- withErrorMessage name
+        "attribute name to contain only alphanumeric characters, dashes, underscores, colons, and periods"
+  _ <- string "=\""
+  v <- fromCharArray <$> many (noneOf [ch "\""])
+  _ <- string "\""
   skipSpaces
-  void $ manyTill (singleton <$> anyChar) (skipSpaces >>= \_ -> string ">")
-  skipSpaces
+  pure (Tuple n v)
 
-parseChildNodes :: (List XML -> XML) -> Parser String XML
-parseChildNodes f = do
-  void (string ">")
-  pure <<< f =<< many1Till parseNode parseClosingTag
-
-parseCDATA :: Parser String String
+parseCDATA :: Parser String XML
 parseCDATA = do
-  void $ string "<![CDATA["
-  str <- foldl append "" <$> many1Till (singleton <$> anyChar) (string "]]>")
-  parseClosingTag
-  pure str
+  _ <- string "<![CDATA["
+  cdata <- fromCharArray <<< fromFoldable <$> manyTill anyChar (lookAhead (string "]]>"))
+  _ <- string "]]>"
+  pure (XMLContent cdata)
 
-parseContentNode :: (List XML -> XML) -> Parser String XML
-parseContentNode f = do
-  void (string ">")
-  content <- try parseCDATA <|> (foldl append "" <$> many1Till anyButBracket parseClosingTag)
-  skipSpaces
-  pure $ f $ pure (XMLContent content)
+parseContent :: Parser String XML
+parseContent = pure <<< XMLContent =<< fromCharArray <$> many (noneOf [ch "<"])
 
-parseSelfClosingTag :: (List XML -> XML) -> Parser String XML
-parseSelfClosingTag f = do
-  let orphan = do
-        void $ string ">"
-        skipSpaces
-        parseClosingTag
-  skipSpaces
-  void (string "/>") <|> orphan
-  skipSpaces
-  pure $ f Nil
+logPos :: Parser String Unit
+logPos = do
+  ps@(ParseState str pos _) <- get
+  _ <- fail str
+  pure unit
 
-parseTagEnd :: Parser String String
-parseTagEnd = string " " <|> (lookAhead (string "/" <|> string ">"))
+-- | Tail-recursive implementation of manyTill.
+manyTill :: forall a end. Parser String a -> Parser String end -> Parser String (List a)
+manyTill p end = (end *> pure Nil) <|> many1Till p end
 
-anyButBracket :: Parser String String
-anyButBracket = singleton <$> (satisfy \c -> Data.String.Unsafe.char "<" /= c && Data.String.Unsafe.char ">" /= c)
+-- | Tail-recursive implementation of many1Till.
+many1Till :: forall a end. Parser String a -> Parser String end -> Parser String (List a)
+many1Till p end = do
+  x <- p
+  tailRecM inner (pure x)
+  where
+    ending acc = do
+      _ <- end
+      pure $ Done (reverse acc)
+    continue acc = do
+      c <- p
+      pure $ Loop (Cons c acc)
+    inner acc = ending acc <|> continue acc
+
+ch :: String -> Char
+ch = Data.String.Unsafe.char
