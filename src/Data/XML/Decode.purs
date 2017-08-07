@@ -35,7 +35,9 @@ instance decodeXmlUnit :: DecodeXML Unit where
 
 instance decodeXmlMaybe :: DecodeXML a => DecodeXML (Maybe a) where
   decodeXML (XMLNode _ _ kids) = maybe (Right Nothing) decodeXML (head kids)
-  decodeXML _ = Right Nothing
+  decodeXML content = do
+    a <- decodeXML content
+    pure (Just a)
 
 instance decodeXmlList :: DecodeXML a => DecodeXML (List a) where
   decodeXML (XMLNode _ _ kids) =
@@ -63,6 +65,26 @@ getChild (XMLNode n _ kids) tag =
    in foldl fold (Left ("no node found with tag \"" <> tag <> "\"")) kids
 
 infixl 7 getChild as ?>
+
+getOptionalChild :: ∀ a. DecodeXML a => XML -> XMLTagName -> Either String (Maybe a)
+getOptionalChild (XMLContent _) tag = Left $ "expected an xml node but found content node"
+getOptionalChild (XMLNode n _ kids) tag =
+  let fold b node@(XMLNode name _ _) = if name == tag then decodeXML node else b
+      fold b node@(XMLContent _) = b
+   in foldl fold (Right Nothing) kids
+
+infixl 7 getOptionalChild as ??>
+
+getOptionalNestedChild :: ∀ a. DecodeXML a => Either String (Maybe XML) -> XMLTagName -> Either String (Maybe a)
+getOptionalNestedChild (Left err) tag = Left err
+getOptionalNestedChild (Right Nothing) tag = Right Nothing
+getOptionalNestedChild (Right (Just (XMLContent _))) tag = Right Nothing
+getOptionalNestedChild (Right (Just (XMLNode n _ kids))) tag =
+  let fold b node@(XMLNode name _ _) = if name == tag then decodeXML node else b
+      fold b node@(XMLContent _) = b
+   in foldl fold (Right Nothing) kids
+
+infixl 7 getOptionalNestedChild as ??>>
 
 getNestedChild :: ∀ a. DecodeXML a => Either String XML -> XMLTagName -> Either String a
 getNestedChild (Left err) _ = Left err
