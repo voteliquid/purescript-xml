@@ -1,14 +1,27 @@
-module Data.XML.Decode where
+module Data.XML.Decode
+  ( class DecodeXML
+  , decodeXML
+  , getChild
+  , getMaybeChild
+  , getChildren
+  , (?>)
+  , (??>)
+  , (?>>)
+  ) where
 
 import Prelude
-import Data.Array (snoc) as A
 import Data.Either (Either(..))
 import Data.Foldable (foldl)
+import Data.Identity (Identity(..))
 import Data.Int (fromString)
-import Data.List (List(..), filter, head, snoc)
+import Data.List (List(..), concat, filter, head, singleton)
 import Data.Maybe (Maybe(..), maybe)
-import Data.XML.Types (XML(..), XMLTagName)
+import Data.Newtype (un)
+import Data.Traversable (sequence)
+import Data.XML.Types (XML(..), Axis(..), LocationStep(..), NodeTest(..), XPath(..))
+import Data.XML.XPath.Parse (parseXPath)
 import Global (isFinite, readFloat)
+import Text.Parsing.Parser (parseErrorMessage, runParserT)
 
 class DecodeXML a where
   decodeXML :: XML -> Either String a
@@ -33,72 +46,53 @@ instance decodeXmlInt :: DecodeXML Int where
 instance decodeXmlUnit :: DecodeXML Unit where
   decodeXML _ = Right unit
 
-instance decodeXmlMaybe :: DecodeXML a => DecodeXML (Maybe a) where
-  decodeXML (XMLNode _ _ kids) = maybe (Right Nothing) decodeXML (head kids)
-  decodeXML content = do
-    a <- decodeXML content
-    pure (Just a)
+getChildren :: ∀ a. DecodeXML a => XML -> String -> Either String (List a)
+getChildren (XMLContent _) _ = Right Nil
+getChildren ctx s = case un Identity (runParserT s parseXPath) of
+  Left err -> Left (parseErrorMessage err)
+  Right (LocationPath steps) -> sequence $ decodeXML <$> foldl foldXPath (singleton ctx) steps
 
-instance decodeXmlList :: DecodeXML a => DecodeXML (List a) where
-  decodeXML (XMLNode _ _ kids) =
-    let fold (Left err) _ = Left err
-        fold (Right as) x = do
-          a <- decodeXML x
-          pure (snoc as a)
-     in foldl fold (Right Nil) kids
-  decodeXML _ = Left "expected XML node"
+infixl 7 getChildren as ?>>
 
-instance decodeXmlArray :: DecodeXML a => DecodeXML (Array a) where
-  decodeXML (XMLNode _ _ kids) =
-    let fold (Left err) _ = Left err
-        fold (Right as) x = do
-          a <- decodeXML x
-          pure (A.snoc as a)
-     in foldl fold (Right []) kids
-  decodeXML _ = Left "expected XML node"
-
-getChild :: ∀ a. DecodeXML a => XML -> XMLTagName -> Either String a
-getChild (XMLContent _) tag = Left $ "expected an xml node but found content node"
-getChild (XMLNode n _ kids) tag =
-  let fold b node@(XMLNode name _ _) = if name == tag then decodeXML node else b
-      fold b node@(XMLContent _) = b
-   in foldl fold (Left ("no node found with tag \"" <> tag <> "\"")) kids
+getChild :: ∀ a. DecodeXML a => XML -> String -> Either String a
+getChild (XMLContent _) s = Left $ "no node found for xpath \"" <> s <> "\""
+getChild ctx s = case un Identity (runParserT s parseXPath) of
+  Left err -> Left (parseErrorMessage err)
+  Right (LocationPath steps) ->
+    case head $ foldl foldXPath (singleton ctx) steps of
+      Nothing -> Left $ "no node found for xpath \"" <> s <> "\""
+      Just x -> decodeXML x
 
 infixl 7 getChild as ?>
 
-getOptionalChild :: ∀ a. DecodeXML a => XML -> XMLTagName -> Either String (Maybe a)
-getOptionalChild (XMLContent _) tag = Left $ "expected an xml node but found content node"
-getOptionalChild (XMLNode n _ kids) tag =
-  let fold b node@(XMLNode name _ _) = if name == tag then decodeXML node else b
-      fold b node@(XMLContent _) = b
-   in foldl fold (Right Nothing) kids
+getMaybeChild :: ∀ a. DecodeXML a => XML -> String -> Either String (Maybe a)
+getMaybeChild (XMLContent _) s = Left $ "no node found for xpath \"" <> s <> "\""
+getMaybeChild ctx s = case un Identity (runParserT s parseXPath) of
+  Left err -> Left (parseErrorMessage err)
+  Right (LocationPath steps) ->
+    case head $ foldl foldXPath (singleton ctx) steps of
+      Nothing -> Right Nothing
+      Just x -> Just <$> decodeXML x
 
-infixl 7 getOptionalChild as ??>
+infixl 7 getMaybeChild as ??>
 
-getOptionalNestedChild :: ∀ a. DecodeXML a => Either String (Maybe XML) -> XMLTagName -> Either String (Maybe a)
-getOptionalNestedChild (Left err) tag = Left err
-getOptionalNestedChild (Right Nothing) tag = Right Nothing
-getOptionalNestedChild (Right (Just (XMLContent _))) tag = Right Nothing
-getOptionalNestedChild (Right (Just (XMLNode n _ kids))) tag =
-  let fold b node@(XMLNode name _ _) = if name == tag then decodeXML node else b
-      fold b node@(XMLContent _) = b
-   in foldl fold (Right Nothing) kids
+foldXPath :: List XML -> LocationStep -> List XML
+foldXPath xs step = concat $ map (\x -> select x step) xs
 
-infixl 7 getOptionalNestedChild as ??>>
+select :: XML -> LocationStep -> List XML
+select (XMLContent _) _ = Nil
+select ctx (LocationStep Child AnyNodeType pred) = childNodes ctx
+select ctx (LocationStep Child TextNodeType pred) = filter filterTextNode (childNodes ctx)
+select ctx (LocationStep Child (NameTest n) pred) = filter (filterNodeName n) (childNodes ctx)
 
-getNestedChild :: ∀ a. DecodeXML a => Either String XML -> XMLTagName -> Either String a
-getNestedChild (Left err) _ = Left err
-getNestedChild (Right x) tag = getChild x tag
+filterNodeName :: String -> XML -> Boolean
+filterNodeName name (XMLContent _) = false
+filterNodeName name (XMLNode n _ _) = n == name
 
-infixl 6 getNestedChild as ?>>
+filterTextNode :: XML -> Boolean
+filterTextNode (XMLContent _) = true
+filterTextNode (XMLNode _ _ _) = false
 
--- Return XML node with children filtered by tag name.
-filterChildren :: ∀ a. DecodeXML a => Either String XML -> XMLTagName -> Either String a
-filterChildren (Left err) _ = Left err
-filterChildren (Right (XMLNode n a kids)) tag = decodeXML $ XMLNode n a (filter eqTag kids)
-  where
-  eqTag (XMLNode name _ _) = name == tag
-  eqTag (XMLContent _) = false
-filterChildren (Right (XMLContent _)) _ = Left "expected an xml node but found content node"
-
-infixl 5 filterChildren as =?>
+childNodes :: XML -> List XML
+childNodes (XMLContent _) = Nil
+childNodes (XMLNode _ _ kids) = kids

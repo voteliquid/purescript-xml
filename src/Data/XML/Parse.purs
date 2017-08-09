@@ -33,6 +33,7 @@ parseClosedTag = do
   attrs <- parseAttributes
   skipSpaces
   _ <- string ">"
+  skipSpaces
   kids <- manyTill (parseCDATA <|> parseEmptyTag <|> parseClosedTag <|> parseContent) (string "</")
   skipSpaces
   _ <- string n

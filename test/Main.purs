@@ -4,8 +4,10 @@ import Prelude
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Data.Either (Either(..))
+import Data.Identity (Identity(..))
+import Data.Newtype (un)
 import Data.XML (parseXML)
-import Text.Parsing.Parser (parseErrorMessage, parseErrorPosition)
+import Text.Parsing.Parser (parseErrorMessage, parseErrorPosition, runParserT)
 
 main :: ∀ e. Eff (console :: CONSOLE | e) Unit
 main =

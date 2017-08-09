@@ -33,15 +33,18 @@ Given the following XML...
 </user>
 ```
 
-... We can decode the above into another value by implementing the
-`decodeXML :: XML -> Either String a` function from the `Data.XML.Decode` type class:
+... We can decode the above into another value by implementing the `decodeXML
+:: XML -> Either String a` function from the `Data.XML.Decode` type class.
+Data is extracted from XML using [XPath](https://en.wikipedia.org/wiki/XPath)
+queries. Currently, only LocationPath expressions, child axes, name tests, and
+text node tests are supported.
 
 ```purescript
 import Control.Applicative (pure)
 import Control.Bind (bind)
 import Data.List (List)
 import Data.Maybe (Maybe)
-import Data.XML (class DecodeXML, decodeXML, (?>), (?>>), (=?>))
+import Data.XML (class DecodeXML, decodeXML, (?>), (??>), (?>>))
 
 newtype User = User
   { id :: String
@@ -53,21 +56,20 @@ newtype User = User
 
 instance decodeXmlUser :: DecodeXML User where
   decodeXML xml = do
-    -- extract the first child node matching the tag name
-    id <- xml ?> "id"
+    -- `?>` extracts the first decoded child node from xpath query results
+    id <- xml ?> "id/text()"
 
-    -- decodes XML node containing string as integer (or number)
-    login_attempts <- xml ?> "login_attempts"
+    -- XML nodes selected by the xpath query are decoded to primitive types, in this case integer.
+    -- DecodeXML instances are provided for strings, numbers, and integers.
+    login_attempts <- xml ?> "login_attempts/text()"
 
-    -- Drill into nested children with the `?>>` operator
-    name <- xml ?> "names" ?>> "firstName" ?>> "text"
+    name <- xml ?> "names/firstName/text()"
 
-    -- decodes missing XML node as `Nothing`, and child of node as `Just a`
-    photo <- xml ?> "photo"
+    -- `??>` extracts the first child node from xpath query result as a maybe value
+    photo <- xml ??> "photo"
 
-    -- Lists and arrays are decoded
-    -- `=?>` is used to return the selected XML node with its children filtered by a tag name
-    roles <- xml ?> "roles" =?> "role"
+    -- `?>>` returns the list of xpath query result nodes
+    roles <- xml ?>> "roles/role/text()"
 
     pure (User { id, name, photo, roles })
 ```
