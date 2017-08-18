@@ -1,5 +1,7 @@
 # purescript-xml
 
+## Disclaimer: This is a work in progress. XPath is not completely implemented, and the XML parser is slow.
+
 Provides an XML parser, and type classes and combinators for encoding and decoding XML.
 
 ## Usage
