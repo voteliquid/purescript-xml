@@ -7,7 +7,7 @@ import Data.Array (fromFoldable, many, (:))
 import Data.Char.Unicode (isAlpha, isAlphaNum)
 import Data.Either (Either)
 import Data.List (List(..), reverse)
-import Data.String (fromCharArray)
+import Data.String.CodeUnits (fromCharArray)
 import Data.String.Unsafe (char) as Data.String.Unsafe
 import Data.Tuple (Tuple(..))
 import Data.XML.Types (XML(..), XMLAttribute)

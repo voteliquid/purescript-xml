@@ -6,7 +6,7 @@ import Control.Alternative ((<|>))
 import Data.Array (many, (:))
 import Data.Char.Unicode (isAlpha, isAlphaNum)
 import Data.Maybe (Maybe(..))
-import Data.String (fromCharArray)
+import Data.String.CodeUnits (fromCharArray)
 import Data.String.Unsafe (char) as Data.String.Unsafe
 import Data.XML.Types (Axis(..), LocationStep(..), NodeTest(..), XPath(..))
 import Text.Parsing.Parser (Parser)
