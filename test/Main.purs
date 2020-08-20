@@ -1,21 +1,36 @@
-module Main where
+module Test.Main where
 
 import Prelude
-import Effect (Effect)
-import Effect.Class.Console (log)
+
 import Data.Either (Either(..))
-import Data.Identity (Identity(..))
-import Data.Newtype (un)
-import Data.XML (parseXML)
-import Text.Parsing.Parser (parseErrorMessage, parseErrorPosition, runParserT)
+import Data.XML (XML(..), parseXML)
+import Effect (Effect)
+import Effect.Aff (launchAff_)
+import Test.Spec (describe, it)
+import Test.Spec.Assertions (shouldEqual, fail)
+import Test.Spec.Reporter (consoleReporter)
+import Test.Spec.Runner (runSpec)
+import Text.Parsing.Parser (parseErrorPosition)
+import Text.Parsing.Parser.Pos (Position(..))
 
 main :: Effect Unit
-main =
-  case parseXML testXML of
-    Left err -> do
-      log (parseErrorMessage err)
-      log ("position: " <> show (parseErrorPosition err))
-    Right xml -> pure unit
+main = launchAff_ $ runSpec [consoleReporter] do
+  describe "parseXML" do
+    it "should parse a full xml test file successfully" do
+      case parseXML testXML of
+        Left err -> fail "parsing failed"
+        Right xml -> pure unit
+
+    it "should parse a simple xml file" do
+      let example = parseXML """<?xml version="1.0" encoding="UTF-8"?><my-test>my-text</my-test>"""
+      let expected =  XMLNode "my-test" mempty $ pure $ XMLContent "my-text"
+      example `shouldEqual` Right expected
+      
+    it "should report an error for a malformed xml file" do
+      let example = parseXML """<?xml version="1.0" encoding="UTF-8"?><"""
+      case example of
+        Left err -> parseErrorPosition err `shouldEqual` (Position {line: 1, column: 40})
+        Right xml -> fail "expected xml to be invalid, but parseXML did not fail"
 
 testXML :: String
 testXML = """

@@ -79,3 +79,34 @@ instance decodeXmlUser :: DecodeXML User where
 ## Documentation
 
 Documentation is published on [Pursuit](https://pursuit.purescript.org/packages/purescript-xml).
+
+
+## Installation (Spago)
+
+Add this to the additions section of your `packages.json` file:
+
+```dhall
+let additions =
+  { xml =
+       { dependencies =
+           [ "prelude"
+           , "unordered-collections"
+           , "lists"
+           , "parsing"
+           , "integers"
+           ]
+       , repo =
+           "https://github.com/voteliquid/purescript-xml.git"
+       , version =
+           "master"
+       }
+  }
+```
+
+## Testing
+
+purescript-xml's testsuite can be run using:
+
+```bash
+$ spago -x test.dhall test
+```
